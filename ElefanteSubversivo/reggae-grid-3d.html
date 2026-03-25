@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REGGAE GRID 3D</title>
+<style>
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background:#000;
+  overflow:hidden;
+  font-family:'Courier New', Courier, monospace;
+  color:#00ff64;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+/* scanline overlay */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background:repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,255,100,0.012) 3px, rgba(0,255,100,0.012) 4px
+  );
+  pointer-events:none;
+  z-index:900;
+}
+/* edge vignette */
+body::after {
+  content:'';
+  position:fixed; inset:0;
+  box-shadow: inset 0 0 140px rgba(0,0,0,0.6),
+              inset 0 0 40px rgba(0,255,100,0.06);
+  pointer-events:none;
+  z-index:901;
+}
+
+#glc {
+  display:block;
+  width:100vw; height:100vh;
+  cursor:grab;
+}
+#glc:active { cursor:grabbing; }
+
+/* ─── HUD ──────────────────────────────────────── */
+#hud {
+  position:fixed; inset:0;
+  pointer-events:none;
+  z-index:950;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  padding:16px;
+}
+
+#top {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+}
+
+#title {
+  font-size:clamp(14px,2.2vw,22px);
+  font-weight:bold;
+  letter-spacing:clamp(3px,0.6vw,7px);
+  line-height:1.3;
+  color:#00ff64;
+  text-shadow:0 0 10px #00ff64, 0 0 28px #00ff6466;
+}
+#title em { color:#ffdc00; font-style:normal; text-shadow:0 0 10px #ffdc00, 0 0 28px #ffdc0066; }
+
+#stats {
+  text-align:right;
+  font-size:clamp(10px,1.1vw,13px);
+  line-height:2;
+  color:#00ff6466;
+}
+#fps   { color:#ffdc00; font-size:clamp(12px,1.4vw,16px); font-weight:bold; }
+#count { color:#00ff6488; }
+#mode  { color:#ff3200; letter-spacing:1px; }
+
+/* ─── Bottom Controls ───────────────────────────── */
+#ctrl {
+  pointer-events:all;
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px 20px;
+  align-items:flex-end;
+  padding:14px 16px;
+  background:rgba(0,4,2,0.82);
+  border:1px solid #00ff6433;
+  border-radius:8px;
+  backdrop-filter:blur(10px);
+  box-shadow:0 0 24px #00ff6418, inset 0 1px 0 #00ff6422;
+}
+
+.cg { display:flex; flex-direction:column; gap:5px; }
+.cl {
+  font-size:9px;
+  letter-spacing:2.5px;
+  color:#00ff6455;
+  text-transform:uppercase;
+}
+.cr { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+
+/* buttons */
+button {
+  background:transparent;
+  border:1px solid #00ff6433;
+  color:#00ff6499;
+  font-family:inherit;
+  font-size:clamp(9px,1vw,11px);
+  letter-spacing:1px;
+  padding:4px 9px;
+  cursor:pointer;
+  border-radius:3px;
+  transition:all 0.12s;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+button:hover {
+  background:#00ff6418;
+  border-color:#00ff6488;
+  color:#00ff64;
+  box-shadow:0 0 8px #00ff6433;
+}
+button.on {
+  background:#00ff6428;
+  border-color:#00ff64;
+  color:#00ff64;
+  box-shadow:0 0 10px #00ff6444;
+}
+button.theme.on {
+  border-color:#ffdc00;
+  color:#ffdc00;
+  background:#ffdc0018;
+  box-shadow:0 0 10px #ffdc0044;
+}
+button.wave.on {
+  border-color:#ff3200;
+  color:#ff3200;
+  background:#ff320018;
+  box-shadow:0 0 10px #ff320044;
+}
+button.grid.on {
+  border-color:#a259ff;
+  color:#a259ff;
+  background:#a259ff18;
+  box-shadow:0 0 10px #a259ff44;
+}
+
+/* range sliders */
+input[type=range] {
+  -webkit-appearance:none;
+  appearance:none;
+  width:88px; height:3px;
+  background:#00ff6433;
+  border-radius:2px;
+  outline:none;
+  cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:13px; height:13px;
+  border-radius:50%;
+  background:#00ff64;
+  box-shadow:0 0 7px #00ff6477;
+}
+input[type=range]::-moz-range-thumb {
+  width:13px; height:13px;
+  border-radius:50%;
+  background:#00ff64;
+  border:none;
+  box-shadow:0 0 7px #00ff6477;
+}
+.vd { font-size:11px; color:#ffdc00; min-width:32px; }
+
+/* ─── Keyboard hints ────────────────────────────── */
+#hints {
+  position:fixed;
+  top:50%; right:16px;
+  transform:translateY(-50%);
+  font-size:clamp(9px,0.9vw,11px);
+  color:#00ff6433;
+  line-height:2.2;
+  text-align:right;
+  pointer-events:none;
+  z-index:950;
+}
+#hints b { color:#00ff6666; }
+</style>
+</head>
+<body>
+
+<canvas id="glc"></canvas>
+
+<div id="hud">
+  <div id="top">
+    <div id="title">REGGAE <em>GRID</em> 3D</div>
+    <div id="stats">
+      <div id="fps">-- FPS</div>
+      <div id="count">4096 CUBOS</div>
+      <div id="mode">RUÍDO</div>
+    </div>
+  </div>
+
+  <div id="ctrl">
+    <div class="cg">
+      <div class="cl">Tema de Cor</div>
+      <div class="cr" id="themeRow">
+        <button class="theme on" data-t="reggae">Reggae</button>
+        <button class="theme"    data-t="neon">Neon</button>
+        <button class="theme"    data-t="fire">Fogo</button>
+        <button class="theme"    data-t="matrix">Matrix</button>
+        <button class="theme"    data-t="ocean">Oceano</button>
+        <button class="theme"    data-t="candy">Candy</button>
+      </div>
+    </div>
+
+    <div class="cg">
+      <div class="cl">Modo de Onda</div>
+      <div class="cr" id="waveRow">
+        <button class="wave on"  data-w="noise">Ruído</button>
+        <button class="wave"     data-w="ripple">Ondas</button>
+        <button class="wave"     data-w="bands">Bandas</button>
+        <button class="wave"     data-w="vortex">Vórtice</button>
+        <button class="wave"     data-w="pulse">Pulso</button>
+      </div>
+    </div>
+
+    <div class="cg">
+      <div class="cl">Velocidade</div>
+      <div class="cr">
+        <input type="range" id="spdSlider" min="0" max="100" value="40">
+        <span class="vd" id="spdVal">40</span>
+      </div>
+    </div>
+
+    <div class="cg">
+      <div class="cl">Tamanho</div>
+      <div class="cr">
+        <input type="range" id="szSlider" min="20" max="200" value="100">
+        <span class="vd" id="szVal">100%</span>
+      </div>
+    </div>
+
+    <div class="cg">
+      <div class="cl">Grade</div>
+      <div class="cr" id="gridRow">
+        <button class="grid"    data-g="8">8³</button>
+        <button class="grid"    data-g="12">12³</button>
+        <button class="grid on" data-g="16">16³</button>
+        <button class="grid"    data-g="20">20³</button>
+      </div>
+    </div>
+
+    <div class="cg">
+      <div class="cl">Ações</div>
+      <div class="cr">
+        <button id="pauseBtn">⏸ Pausar</button>
+        <button id="autoBtn" class="on">↺ Auto</button>
+        <button id="resetBtn">⟳ Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="hints">
+  <div><b>ARRASTAR</b> rotacionar</div>
+  <div><b>SCROLL</b> zoom</div>
+  <div><b>ESPAÇO</b> pausar</div>
+  <div><b>R</b> resetar</div>
+  <div><b>A</b> auto-rot</div>
+  <div><b>+/-</b> velocidade</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  REGGAE GRID 3D  ·  Pure WebGL2  ·  No Dependencies
+// ═══════════════════════════════════════════════════
+
+const canvas = document.getElementById('glc');
+const gl = canvas.getContext('webgl2', { antialias: true });
+
+if (!gl) {
+  document.body.innerHTML =
+    `<p style="color:#ff3200;text-align:center;margin-top:25vh;
+     font-family:monospace;font-size:1.6em;line-height:2">
+     WebGL2 não suportado neste navegador.</p>`;
+  throw new Error('WebGL2 unavailable');
+}
+
+// ── Shaders ─────────────────────────────────────────
+const VS = `#version 300 es
+precision mediump float;
+
+in vec3  aPos;
+in vec3  aNorm;
+in vec3  aOff;
+in float aSz;
+in vec3  aCol;
+in float aRX;
+in float aRY;
+
+uniform mat4 uVP;
+
+out vec3  vCol;
+out float vLit;
+out float vPulse;
+
+mat3 rX(float a){ float s=sin(a),c=cos(a); return mat3(1,0,0, 0,c,s, 0,-s,c); }
+mat3 rY(float a){ float s=sin(a),c=cos(a); return mat3(c,0,-s, 0,1,0, s,0,c); }
+
+void main(){
+  mat3 R  = rY(aRY)*rX(aRX);
+  vec3 p  = R*(aPos*aSz*0.5)+aOff;
+  gl_Position = uVP*vec4(p,1.0);
+
+  vec3 ld  = normalize(vec3(1.0,1.6,0.9));
+  vec3 n   = normalize(R*aNorm);
+  float d  = max(dot(n,ld),0.0);
+  float ri = max(dot(n,-ld)*0.3,0.0);
+  vLit  = 0.28 + d*0.55 + ri*0.17;
+  vPulse= (aRX+aRY)*0.5;
+  vCol  = aCol;
+}`;
+
+const FS = `#version 300 es
+precision mediump float;
+
+in  vec3  vCol;
+in  float vLit;
+in  float vPulse;
+out vec4  fragColor;
+
+void main(){
+  vec3 c = vCol*vLit;
+  // specular bloom on high-pulse faces
+  c += vCol * max(vPulse-0.15,0.0)*0.9;
+  // edge tint
+  c += vec3(0.04,0.08,0.04)*vLit;
+  fragColor = vec4(c,1.0);
+}`;
+
+function mkShader(src, type){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, mkShader(VS, gl.VERTEX_SHADER));
+gl.attachShader(prog, mkShader(FS, gl.FRAGMENT_SHADER));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog, gl.LINK_STATUS))
+  throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+const L = name => gl.getAttribLocation(prog, name);
+const U = name => gl.getUniformLocation(prog, name);
+const uVP=U('uVP'), lPos=L('aPos'), lNorm=L('aNorm'),
+      lOff=L('aOff'), lSz=L('aSz'), lCol=L('aCol'),
+      lRX=L('aRX'), lRY=L('aRY');
+
+// ── Cube Geometry (24 verts, 36 idx) ────────────────
+const CVERTS = new Float32Array([
+  -1,-1, 1,  0, 0, 1,   1,-1, 1,  0, 0, 1,   1, 1, 1,  0, 0, 1,  -1, 1, 1,  0, 0, 1,
+   1,-1,-1,  0, 0,-1,  -1,-1,-1,  0, 0,-1,  -1, 1,-1,  0, 0,-1,   1, 1,-1,  0, 0,-1,
+  -1,-1,-1, -1, 0, 0,  -1,-1, 1, -1, 0, 0,  -1, 1, 1, -1, 0, 0,  -1, 1,-1, -1, 0, 0,
+   1,-1, 1,  1, 0, 0,   1,-1,-1,  1, 0, 0,   1, 1,-1,  1, 0, 0,   1, 1, 1,  1, 0, 0,
+  -1, 1, 1,  0, 1, 0,   1, 1, 1,  0, 1, 0,   1, 1,-1,  0, 1, 0,  -1, 1,-1,  0, 1, 0,
+  -1,-1,-1,  0,-1, 0,   1,-1,-1,  0,-1, 0,   1,-1, 1,  0,-1, 0,  -1,-1, 1,  0,-1, 0,
+]);
+const CIDX = new Uint16Array([
+   0, 1, 2,  0, 2, 3,   4, 5, 6,  4, 6, 7,
+   8, 9,10,  8,10,11,  12,13,14, 12,14,15,
+  16,17,18, 16,18,19,  20,21,22, 20,22,23,
+]);
+
+// ── VAO & Buffers ───────────────────────────────────
+const MAX_INST = 20*20*20;
+const IF = 9;            // floats per instance
+const IS = IF * 4;       // bytes per instance stride
+
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+
+// Geometry
+const gBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, gBuf);
+gl.bufferData(gl.ARRAY_BUFFER, CVERTS, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(lPos);
+gl.vertexAttribPointer(lPos,  3, gl.FLOAT, false, 24, 0);
+gl.enableVertexAttribArray(lNorm);
+gl.vertexAttribPointer(lNorm, 3, gl.FLOAT, false, 24, 12);
+
+// EBO
+const eBuf = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eBuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, CIDX, gl.STATIC_DRAW);
+
+// Instanced buffer – pre-allocate max
+const iBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, iBuf);
+gl.bufferData(gl.ARRAY_BUFFER, MAX_INST * IS, gl.DYNAMIC_DRAW);
+
+function setInstAttr(loc, size, off){
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, IS, off);
+  gl.vertexAttribDivisor(loc, 1);
+}
+setInstAttr(lOff, 3,  0);
+setInstAttr(lSz,  1, 12);
+setInstAttr(lCol, 3, 16);
+setInstAttr(lRX,  1, 28);
+setInstAttr(lRY,  1, 32);
+
+gl.bindVertexArray(null);
+
+// ── Math ────────────────────────────────────────────
+function m4mul(a, b){
+  const o = new Float32Array(16);
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+    let s=0; for(let k=0;k<4;k++) s+=a[i+k*4]*b[k+j*4];
+    o[i+j*4]=s;
+  }
+  return o;
+}
+function m4persp(fov, asp, n, f){
+  const t=1/Math.tan(fov*.5), d=n-f;
+  return new Float32Array([
+    t/asp,0,          0,           0,
+    0,    t,          0,           0,
+    0,    0, (f+n)/d,             -1,
+    0,    0, 2*f*n/d,              0,
+  ]);
+}
+function m4rx(a){ const c=Math.cos(a),s=Math.sin(a); return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]); }
+function m4ry(a){ const c=Math.cos(a),s=Math.sin(a); return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]); }
+function m4tr(x,y,z){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]); }
+
+// ── Noise ────────────────────────────────────────────
+const fract = x => x - Math.floor(x);
+const lerp  = (a,b,t) => a+t*(b-a);
+const fade  = t => t*t*t*(t*(t*6-15)+10);
+const h3    = (x,y,z) => fract(Math.sin(x*127.1+y*311.7+z*74.7)*43758.5453);
+
+function noise3(x,y,z){
+  const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+  const xf=x-xi, yf=y-yi, zf=z-zi;
+  const u=fade(xf), v=fade(yf), w=fade(zf);
+  return lerp(
+    lerp(lerp(h3(xi,yi,zi),   h3(xi+1,yi,zi),   u), lerp(h3(xi,yi+1,zi),   h3(xi+1,yi+1,zi),   u), v),
+    lerp(lerp(h3(xi,yi,zi+1), h3(xi+1,yi,zi+1), u), lerp(h3(xi,yi+1,zi+1), h3(xi+1,yi+1,zi+1), u), v),
+    w
+  );
+}
+
+// ── Grid ────────────────────────────────────────────
+const SP = 20; // spacing
+let gs   = 16; // grid size
+let grid = [];
+let iData= null;
+
+function buildGrid(size){
+  gs = size;
+  grid = [];
+  for(let x=0;x<size;x++)
+    for(let y=0;y<size;y++)
+      for(let z=0;z<size;z++)
+        grid.push({ x, y, z, off: Math.random()*1000 });
+  iData = new Float32Array(grid.length * IF);
+  document.getElementById('count').textContent =
+    `${grid.length.toLocaleString()} CUBOS`;
+}
+buildGrid(16);
+
+// ── Color Themes ─────────────────────────────────────
+const THEMES = {
+  reggae: p => p>0.4?[0.0,1.0,0.38] : p>0.0?[1.0,0.86,0.0] : [1.0,0.20,0.0],
+  neon:   p => p>0.4?[0.0,1.0,1.0]  : p>0.0?[1.0,0.1,1.0]  : [1.0,1.0,0.0],
+  fire:   p => p>0.5?[1.0,1.0,0.75] : p>0.0?[1.0,0.42,0.0] : [0.85,0.0,0.0],
+  matrix: p => { const v=0.15+Math.max(p,0)*0.85; return [0, v, v*0.08]; },
+  ocean:  p => p>0.4?[0.0,0.9,1.0]  : p>0.0?[0.0,0.4,0.9]  : [0.3,0.0,0.7],
+  candy:  p => p>0.4?[1.0,0.35,0.7] : p>0.0?[1.0,0.8,0.0]  : [0.3,0.5,1.0],
+};
+
+// ── Wave Modes ───────────────────────────────────────
+const WAVES = {
+  noise:  (b,t) => {
+    const n = noise3(b.x*0.2, b.y*0.2, b.z*0.2 + t + b.off*0.001);
+    return Math.sin(n * Math.PI*2 + t*2);
+  },
+  ripple: (b,t) => {
+    const cx=(gs-1)/2, cy=(gs-1)/2, cz=(gs-1)/2;
+    const d = Math.sqrt((b.x-cx)**2+(b.y-cy)**2+(b.z-cz)**2);
+    return Math.sin(d*0.55 - t*3.5);
+  },
+  bands: (b,t) => Math.sin(b.x*0.45+t*1.5) * Math.cos(b.z*0.45+t),
+  vortex:(b,t) => {
+    const cx=(gs-1)/2, cz=(gs-1)/2;
+    const ang = Math.atan2(b.z-cz, b.x-cx);
+    const d   = Math.sqrt((b.x-cx)**2+(b.z-cz)**2);
+    return Math.sin(ang*3 + d*0.32 - t*2.2 + b.y*0.22);
+  },
+  pulse: (b,t) => {
+    const cx=(gs-1)/2, cy=(gs-1)/2, cz=(gs-1)/2;
+    const d = Math.sqrt((b.x-cx)**2+(b.y-cy)**2+(b.z-cz)**2);
+    return Math.sin(t*4 - d*0.45) * (0.6 + noise3(b.x*0.3,b.y*0.3,b.z*0.3)*0.4);
+  },
+};
+
+// ── Camera State ─────────────────────────────────────
+let camRX = -0.5, camRY = 0.5, zoom = 1.0;
+let drag = false, lastX=0, lastY=0, pinchDist=0;
+
+// ── Anim State ───────────────────────────────────────
+let T       = 0;
+let paused  = false;
+let autoRot = true;
+let speed   = 1.0;
+let szMult  = 1.0;
+let curTheme= 'reggae';
+let curWave = 'noise';
+
+// ── Resize ───────────────────────────────────────────
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  canvas.width  = Math.round(innerWidth  * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Camera VP Matrix ─────────────────────────────────
+function getVP(){
+  const asp  = canvas.width / canvas.height;
+  const dist = (gs * SP * 1.25) / zoom;
+  const proj = m4persp(Math.PI/3.4, asp, 1, 8000);
+  const mv   = m4mul(m4tr(0, 0, -dist), m4mul(m4rx(camRX), m4ry(camRY)));
+  return m4mul(proj, mv);
+}
+
+// ── Render Loop ──────────────────────────────────────
+let lastFPSTime = performance.now(), fpsCount = 0;
+
+function render(now){
+  requestAnimationFrame(render);
+
+  // FPS
+  fpsCount++;
+  if(now - lastFPSTime >= 600){
+    document.getElementById('fps').textContent =
+      `${Math.round(fpsCount*1000/(now-lastFPSTime))} FPS`;
+    fpsCount = 0; lastFPSTime = now;
+  }
+
+  if(!paused)  T += 0.02 * speed;
+  if(autoRot && !drag) camRY += 0.004;
+
+  // Build instance data
+  const center = (gs-1)/2;
+  const wfn    = WAVES[curWave];
+  const tfn    = THEMES[curTheme];
+  const bSz    = 8 * szMult;
+
+  for(let i=0; i<grid.length; i++){
+    const b = grid[i];
+    const p = wfn(b, T);
+    const col= tfn(p);
+    const sz = Math.max(0.5, bSz + p*6*szMult);
+    const rx = p * 0.3;
+    const ry = p * 0.3;
+    const o  = i * IF;
+    iData[o  ] = (b.x-center)*SP;
+    iData[o+1] = (b.y-center)*SP;
+    iData[o+2] = (b.z-center)*SP;
+    iData[o+3] = sz;
+    iData[o+4] = col[0];
+    iData[o+5] = col[1];
+    iData[o+6] = col[2];
+    iData[o+7] = rx;
+    iData[o+8] = ry;
+  }
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, iBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, iData);
+
+  gl.clearColor(0, 0.008, 0.004, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(uVP, false, getVP());
+  gl.bindVertexArray(vao);
+  gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, grid.length);
+  gl.bindVertexArray(null);
+}
+requestAnimationFrame(render);
+
+// ── Mouse ────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  drag=true; lastX=e.clientX; lastY=e.clientY;
+});
+canvas.addEventListener('mousemove', e => {
+  if(!drag) return;
+  camRY += (e.clientX-lastX)*0.009;
+  camRX += (e.clientY-lastY)*0.009;
+  camRX  = Math.max(-Math.PI/2, Math.min(Math.PI/2, camRX));
+  lastX=e.clientX; lastY=e.clientY;
+});
+canvas.addEventListener('mouseup',    () => drag=false);
+canvas.addEventListener('mouseleave', () => drag=false);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom = Math.max(0.15, Math.min(3.5, zoom*(e.deltaY>0?0.92:1.087)));
+}, { passive:false });
+
+// ── Touch ────────────────────────────────────────────
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(e.touches.length===1){
+    drag=true; lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+  } else if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    pinchDist=Math.hypot(dx,dy); drag=false;
+  }
+}, { passive:false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if(e.touches.length===1 && drag){
+    camRY += (e.touches[0].clientX-lastX)*0.009;
+    camRX += (e.touches[0].clientY-lastY)*0.009;
+    camRX  = Math.max(-Math.PI/2, Math.min(Math.PI/2, camRX));
+    lastX=e.touches[0].clientX; lastY=e.touches[0].clientY;
+  } else if(e.touches.length===2 && pinchDist>0){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const nd=Math.hypot(dx,dy);
+    zoom=Math.max(0.15,Math.min(3.5,zoom*(nd/pinchDist)));
+    pinchDist=nd;
+  }
+}, { passive:false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if(e.touches.length<2) pinchDist=0;
+  if(e.touches.length===0) drag=false;
+}, { passive:false });
+
+// ── Keyboard ─────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  switch(e.code){
+    case 'Space': e.preventDefault(); togglePause(); break;
+    case 'KeyR':  camRX=-0.5; camRY=0.5; zoom=1.0; break;
+    case 'KeyA':  toggleAuto(); break;
+    case 'Equal': case 'NumpadAdd':
+      speed=Math.min(3,speed+0.2);
+      syncSpeedSlider(); break;
+    case 'Minus': case 'NumpadSubtract':
+      speed=Math.max(0,speed-0.2);
+      syncSpeedSlider(); break;
+  }
+});
+
+// ── UI ───────────────────────────────────────────────
+function togglePause(){
+  paused=!paused;
+  const b=document.getElementById('pauseBtn');
+  b.textContent = paused ? '▶ Continuar' : '⏸ Pausar';
+  b.classList.toggle('on', paused);
+}
+function toggleAuto(){
+  autoRot=!autoRot;
+  document.getElementById('autoBtn').classList.toggle('on',autoRot);
+}
+
+document.getElementById('pauseBtn').onclick = togglePause;
+document.getElementById('autoBtn').onclick  = toggleAuto;
+document.getElementById('resetBtn').onclick = () => {
+  camRX=-0.5; camRY=0.5; zoom=1.0;
+};
+
+document.querySelectorAll('.theme').forEach(b => b.addEventListener('click', ()=>{
+  curTheme = b.dataset.t;
+  document.querySelectorAll('.theme').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+}));
+
+document.querySelectorAll('.wave').forEach(b => b.addEventListener('click', ()=>{
+  curWave = b.dataset.w;
+  document.querySelectorAll('.wave').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.getElementById('mode').textContent = b.textContent.trim().toUpperCase();
+}));
+
+document.querySelectorAll('.grid').forEach(b => b.addEventListener('click', ()=>{
+  buildGrid(parseInt(b.dataset.g));
+  document.querySelectorAll('.grid').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+}));
+
+const spdSlider = document.getElementById('spdSlider');
+spdSlider.addEventListener('input', ()=>{
+  speed = spdSlider.value / 40;
+  document.getElementById('spdVal').textContent = spdSlider.value;
+});
+function syncSpeedSlider(){
+  const v = Math.round(speed*40);
+  spdSlider.value = v;
+  document.getElementById('spdVal').textContent = v;
+}
+
+document.getElementById('szSlider').addEventListener('input', function(){
+  szMult = this.value/100;
+  document.getElementById('szVal').textContent = this.value+'%';
+});
+</script>
+</body>
+</html>

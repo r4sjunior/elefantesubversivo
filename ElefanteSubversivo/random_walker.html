@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Random Walker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+</head>
+<body>
+<script>
+const numLines = 20;
+const positionIncrement = 10;
+const colorIncrement = 12;
+let walkers = [];
+function setup() {
+  createCanvas(1080, 1080);
+  background(0);
+  
+  let canvasElement = document.querySelector('canvas');
+  canvasElement.style.width = '100%';
+  canvasElement.style.height = 'auto';
+  canvasElement.style.maxWidth = '100vw';
+  canvasElement.style.maxHeight = '100vh';
+  canvasElement.style.objectFit = 'contain';
+  for (let i = 0; i < numLines; i++) {
+    walkers.push({
+      x: width / 2,
+      y: height / 2,
+      r: random(255),
+      g: random(150, 255),
+      b: 0,
+      weight: random(2, 6)
+    });
+  }
+}
+function draw() {
+  for (let i = 0; i < walkers.length; i++) {
+    let w = walkers[i];
+    let nextX = randomChange(w.x, positionIncrement, 0, width);
+    let nextY = randomChange(w.y, positionIncrement, 0, height);
+    w.r = randomChange(w.r, colorIncrement, 0, 255);
+    w.g = randomChange(w.g, colorIncrement, 100, 255);
+    w.b = randomChange(w.b, colorIncrement, 0, 50);
+    strokeWeight(w.weight);
+    stroke(w.r, w.g, w.b, 180);
+    line(w.x, w.y, nextX, nextY);
+    w.x = nextX;
+    w.y = nextY;
+  }
+}
+function randomChange(original, increment, minVal, maxVal) {
+  let v = original + Math.floor(random(-increment, increment + 1));
+  if (v < minVal || v > maxVal) {
+    v = original + (original < minVal ? increment : -increment);
+  }
+  return v;
+}
+function windowResized() {
+  let canvasElement = document.querySelector('canvas');
+  canvasElement.style.width = '100%';
+  canvasElement.style.height = 'auto';
+}
+</script>
+</body>
+</html>

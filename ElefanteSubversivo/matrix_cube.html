@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matrix Cube</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+</head>
+<body>
+<script>
+let fontMono;
+let chars = "0 1 A B C D E F Q W M N U V X".split(" ");
+let matrixChars = "0 1 A B C D E F { } # $ % &".split("");
+let glitchSymbols = ["💀","🐇","🌺","💰","⚠ ERROR","CRITICAL FAIL","BLOCK INVALID","404 BLOCK NOT FOUND"];
+let glitchBursts = [];
+let drops = [];
+let nodes = [];
+let numNodes = 6;
+let cubeSize;
+let hashInterval = 180;
+let tick = 0;
+
+function preload() {
+  fontMono = loadFont("https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Regular.otf");
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight, WEBGL);
+  pixelDensity(1);
+  textFont(fontMono);
+  textAlign(CENTER, CENTER);
+  colorMode(HSB, 360, 100, 100, 100);
+  cubeSize = min(width, height) * 0.3;
+  initNodes();
+  initMatrix();
+}
+
+function initNodes() {
+  nodes = [];
+  let radius = cubeSize * 1.7;
+  for (let i = 0; i < numNodes; i++) {
+    let ang = map(i, 0, numNodes, 0, TWO_PI);
+    let x = cos(ang) * radius;
+    let z = sin(ang) * radius;
+    let y = random(-cubeSize * 0.4, cubeSize * 0.4);
+    nodes.push({
+      pos: createVector(x, y, z),
+      rotOffset: random(TWO_PI),
+      rotSpeed: random(0.005, 0.015),
+      hash: randomHash(12),
+      pulse: 0
+    });
+  }
+}
+
+function initMatrix() {
+  let cols = floor(width / 18);
+  drops = [];
+  for (let i = 0; i < cols; i++) drops[i] = random(height * -1, height);
+}
+
+function randomHash(len) {
+  let out = "";
+  let hex = "0123456789ABCDEF";
+  for (let i = 0; i < len; i++) out += hex[int(random(hex.length))];
+  return out;
+}
+
+function draw() {
+  background(0);
+  orbitControl();
+  tick++;
+
+  if (tick % hashInterval === 0) {
+    for (let n of nodes) {
+      n.hash = randomHash(12);
+      n.pulse = 1.0;
+    }
+    if (random(1) < 0.7) spawnGlitchBurst();
+  }
+
+  push();
+  resetMatrix();
+  drawMatrixEffects();
+  pop();
+
+  rotateY(frameCount * 0.002);
+  rotateX(sin(frameCount * 0.003) * 0.1);
+  drawConnections();
+
+  for (let n of nodes) {
+    push();
+    translate(n.pos.x, n.pos.y, n.pos.z);
+    let ang = frameCount * n.rotSpeed + n.rotOffset;
+    rotateY(ang);
+    rotateX(sin(ang * 0.7) * 0.4);
+    drawAsciiCube(cubeSize);
+    pop();
+    n.pulse *= 0.9;
+  }
+}
+
+function spawnGlitchBurst() {
+  let x = random(width * 0.15, width * 0.85);
+  let y = random(height * 0.1, height * 0.9);
+  let sym = random(glitchSymbols);
+  let life = int(random(40, 90));
+  glitchBursts.push({ x, y, sym, life, maxLife: life });
+}
+
+function drawMatrixEffects() {
+  push();
+  translate(-width / 2, -height / 2);
+  textSize(16);
+
+  for (let i = 0; i < drops.length; i++) {
+    fill(120, 90, 80, 80);
+    let ch = matrixChars[int(random(matrixChars.length))];
+    text(ch, i * 18, drops[i]);
+
+    if (random(1) < 0.005) {
+      let g = random(glitchSymbols);
+      fill(0, 0, 0, 150);
+      rect(i * 18 - 20, drops[i] - 10, 60, 40);
+      if (g.includes("ERROR") || g.includes("FAIL") || g.includes("BLOCK")) {
+        fill(0, 100, 100, 100);
+        textSize(14);
+      } else {
+        fill(50, 0, 100, 100);
+        textSize(20);
+      }
+      text(g, i * 18, drops[i] + 20);
+    }
+
+    drops[i] += 14;
+
+    if (drops[i] > height) {
+      if (random() < 0.15) drops[i] = random(-200, 0);
+      else drops[i] = random(-height * 0.7, 0);
+    }
+  }
+
+  for (let i = glitchBursts.length - 1; i >= 0; i--) {
+    let g = glitchBursts[i];
+    let tNorm = 1 - g.life / g.maxLife;
+
+    push();
+    let w = 220 + 120 * sin(frameCount * 0.05);
+    let h = 80 + 40 * sin(frameCount * 0.04 + 1.5);
+    let alphaBox = map(g.life, 0, g.maxLife, 0, 180);
+
+    fill(0, 0, 0, alphaBox);
+    rect(g.x - w / 2, g.y - h / 2, w, h);
+
+    noFill();
+    let errAlpha = 60 + 40 * sin(frameCount * 0.4);
+    stroke(0, 100, 100, errAlpha);
+    strokeWeight(2);
+    rect(g.x - w / 2, g.y - h / 2, w, h);
+
+    noStroke();
+    let isError = g.sym.includes("ERROR") || g.sym.includes("FAIL") || g.sym.includes("BLOCK");
+
+    if (isError) {
+      fill(0, 100, 100, 100);
+      textSize(22 + 6 * sin(frameCount * 0.3));
+    } else {
+      fill(50, 0, 100, 100);
+      textSize(32 + 8 * sin(frameCount * 0.25));
+    }
+    text(g.sym, g.x, g.y);
+    pop();
+
+    g.life--;
+    if (g.life <= 0) glitchBursts.splice(i, 1);
+  }
+
+  pop();
+}
+
+function drawConnections() {
+  for (let i = 0; i < nodes.length; i++) {
+    let a = nodes[i];
+    let b = nodes[(i + 1) % nodes.length];
+    let pulse = a.pulse;
+
+    let baseWeight = 2;
+    let w = baseWeight + pulse * 4;
+    let brightness = 40 + pulse * 60;
+
+    stroke(50, 0, brightness, 90);
+    strokeWeight(w);
+    line(a.pos.x, a.pos.y, a.pos.z, b.pos.x, b.pos.y, b.pos.z);
+
+    let mid = p5.Vector.add(a.pos, b.pos).mult(0.5);
+
+    push();
+    translate(mid.x, mid.y, mid.z);
+    noStroke();
+    fill(200, 0, 70 + pulse * 30, 100);
+    sphere(7 + pulse * 4);
+    pop();
+
+    push();
+    translate(mid.x + 25, mid.y - 25, mid.z);
+    rotateY(-frameCount * 0.002);
+
+    if (pulse > 0.4) {
+      fill(50, 0, 100, 100);
+      textSize(18);
+    } else {
+      fill(60, 0, 90, 100);
+      textSize(14);
+    }
+    text(a.hash, 0, 0);
+    pop();
+
+    if (pulse > 0.7) {
+      stroke(0, 0, 100, 80);
+      strokeWeight(w * 1.4);
+      line(a.pos.x, a.pos.y, a.pos.z, b.pos.x, b.pos.y, b.pos.z);
+    }
+  }
+}
+
+function drawAsciiCube(s) {
+  drawFace(0, 0, s / 2, 0, 0, 0, color(0, 80, 100)); 
+  drawFace(0, 0, -s / 2, 0, PI, 0, color(120, 80, 90)); 
+  drawFace(0, -s / 2, 0, -HALF_PI, 0, 0, color(0, 80, 100), color(50, 90, 100));
+  drawFace(0, s / 2, 0, HALF_PI, 0, 0, color(50, 90, 100), color(120, 90, 100));
+  drawFace(-s / 2, 0, 0, 0, -HALF_PI, 0, color(120, 60, 60)); 
+  drawFace(s / 2, 0, 0, 0, HALF_PI, 0, color(120, 60, 75));
+}
+
+function drawFace(xPos, yPos, zPos, rotX, rotY, rotZ, c1, c2 = null) {
+  push();
+  translate(xPos, yPos, zPos);
+  rotateX(rotX);
+  rotateY(rotY);
+  rotateZ(rotZ);
+
+  let half = cubeSize / 2;
+  let step = 14;
+
+  for (let y = -half; y < half; y += step) {
+    let t = map(y, -half, half, 0, 1);
+    let col;
+
+    if (c2) {
+      let h = lerp(hue(c1), hue(c2), t);
+      let s = lerp(saturation(c1), saturation(c2), t);
+      let b = lerp(brightness(c1), brightness(c2), t);
+      col = color(h, s, b);
+    } else {
+      col = c1;
+    }
+
+    fill(col);
+    for (let x = -half; x < half; x += step) {
+      let ch = chars[int(random(chars.length))];
+      textSize(step * 0.9);
+      text(ch, x, y);
+    }
+  }
+  pop();
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  cubeSize = min(width, height) * 0.3;
+  initMatrix();
+  initNodes();
+}
+</script>
+</body>
+</html>
